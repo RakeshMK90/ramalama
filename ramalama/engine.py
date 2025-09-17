@@ -79,9 +79,17 @@ class Engine:
                 self.exec_args += [
                     "--security-opt=label=disable",
                 ]
-            if not getattr(self.args, "nocapdrop", False):
+
+            # Skip --cap-drop=all for Jetson boards as it interferes with GPU access
+            jetson_detected = "JETSON_VISIBLE_DEVICES" in get_accel_env_vars()
+            if not getattr(self.args, "nocapdrop", False) and not jetson_detected:
                 self.exec_args += [
                     "--cap-drop=all",
+                    "--security-opt=no-new-privileges",
+                ]
+            elif not jetson_detected:
+                # Still add no-new-privileges even when skipping cap-drop for non-Jetson
+                self.exec_args += [
                     "--security-opt=no-new-privileges",
                 ]
 
@@ -142,6 +150,10 @@ class Engine:
                 else:
                     # newer Podman versions support --gpus=all, but < 5.0 do not
                     self.exec_args += ["--device", "nvidia.com/gpu=all"]
+            elif k == "JETSON_VISIBLE_DEVICES":
+                # Jetson boards need both /dev/dri and nvidia.com/gpu=all
+                self.exec_args += ["--device", "/dev/dri"]
+                self.exec_args += ["--device", "nvidia.com/gpu=all"]
             elif k == "MUSA_VISIBLE_DEVICES":
                 self.exec_args += ["--env", "MTHREADS_VISIBLE_DEVICES=all"]
 
@@ -160,6 +172,10 @@ class Engine:
 
     def handle_podman_specifics(self):
         if getattr(self.args, "podman_keep_groups", None):
+            self.exec_args += ["--group-add", "keep-groups"]
+
+        # Jetson boards need --group-add keep-groups for proper GPU access
+        if "JETSON_VISIBLE_DEVICES" in get_accel_env_vars():
             self.exec_args += ["--group-add", "keep-groups"]
 
     def add(self, newargs):

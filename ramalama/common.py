@@ -311,6 +311,31 @@ def check_asahi() -> Literal["asahi"] | None:
     return None
 
 
+def check_jetson() -> Literal["jetson"] | None:
+    if os.path.exists('/proc/device-tree/model'):
+        try:
+            with open('/proc/device-tree/model', 'rb') as f:
+                content = f.read().decode('utf-8', errors='ignore').lower()
+                if "jetson" in content:
+                    os.environ["JETSON_VISIBLE_DEVICES"] = "0"
+                    return "jetson"
+        except OSError:
+            pass
+    
+    # Fallback: check for tegra in nvidia device tree
+    if os.path.exists('/proc/device-tree/compatible'):
+        try:
+            with open('/proc/device-tree/compatible', 'rb') as f:
+                content = f.read().split(b"\0")
+                if any(b"nvidia,tegra" in item for item in content):
+                    os.environ["JETSON_VISIBLE_DEVICES"] = "0"
+                    return "jetson"
+        except OSError:
+            pass
+
+    return None
+
+
 def check_metal(args: ContainerArgType) -> bool:
     if args.container:
         return False
@@ -443,12 +468,13 @@ def check_mthreads() -> Literal["musa"] | None:
     return None
 
 
-AccelType: TypeAlias = Literal["asahi", "cuda", "cann", "hip", "intel", "musa"]
+AccelType: TypeAlias = Literal["asahi", "jetson", "cuda", "cann", "hip", "intel", "musa"]
 
 
 def get_accel() -> AccelType | Literal["none"]:
     checks: tuple[Callable[[], AccelType | None], ...] = (
         check_asahi,
+        check_jetson,
         cast(Callable[[], Literal['cuda'] | None], check_nvidia),
         check_ascend,
         check_rocm_amd,
@@ -482,6 +508,7 @@ GPUEnvVar: TypeAlias = Literal[
     "GGML_VK_VISIBLE_DEVICES",
     "HIP_VISIBLE_DEVICES",
     "INTEL_VISIBLE_DEVICES",
+    "JETSON_VISIBLE_DEVICES",
     "MUSA_VISIBLE_DEVICES",
 ]
 
