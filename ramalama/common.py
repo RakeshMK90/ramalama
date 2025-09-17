@@ -380,7 +380,9 @@ def check_nvidia() -> Literal["cuda"] | None:
             if not configured:
                 configured = indices
 
-        os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(configured)
+        # Don't set CUDA_VISIBLE_DEVICES if Jetson is already detected
+        if "JETSON_VISIBLE_DEVICES" not in os.environ:
+            os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(configured)
         return "cuda"
 
     return None

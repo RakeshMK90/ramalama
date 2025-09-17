@@ -90,8 +90,8 @@ class Engine:
                     "--cap-drop=all",
                     "--security-opt=no-new-privileges",
                 ]
-            elif not jetson_detected:
-                # Still add no-new-privileges even when skipping cap-drop for non-Jetson
+            elif jetson_detected:
+                # Still add no-new-privileges for Jetson (but skip cap-drop=all)
                 self.exec_args += [
                     "--security-opt=no-new-privileges",
                 ]
@@ -145,17 +145,26 @@ class Engine:
             for dev in glob.glob(path):
                 self.exec_args += ["--device", dev]
 
-        for k, v in get_accel_env_vars().items():
-            # Special case for Cuda
-            if k == "CUDA_VISIBLE_DEVICES":
-                if self.use_docker:
-                    self.exec_args += ["--gpus", "all"]
-                else:
-                    # newer Podman versions support --gpus=all, but < 5.0 do not
-                    self.exec_args += ["--device", "nvidia.com/gpu=all"]
-            elif k == "JETSON_VISIBLE_DEVICES":
-                # Jetson boards need nvidia.com/gpu=all (dri devices are added by the general loop)
+        accel_env_vars = get_accel_env_vars()
+
+        # Jetson takes priority over CUDA since Jetson boards have NVIDIA hardware
+        if "JETSON_VISIBLE_DEVICES" in accel_env_vars:
+            # Jetson boards need nvidia.com/gpu=all (dri devices are added by the general loop)
+            self.exec_args += ["--device", "nvidia.com/gpu=all"]
+            self.exec_args += ["-e", f"JETSON_VISIBLE_DEVICES={accel_env_vars['JETSON_VISIBLE_DEVICES']}"]
+        elif "CUDA_VISIBLE_DEVICES" in accel_env_vars:
+            # Regular CUDA handling
+            if self.use_docker:
+                self.exec_args += ["--gpus", "all"]
+            else:
+                # newer Podman versions support --gpus=all, but < 5.0 do not
                 self.exec_args += ["--device", "nvidia.com/gpu=all"]
+            self.exec_args += ["-e", f"CUDA_VISIBLE_DEVICES={accel_env_vars['CUDA_VISIBLE_DEVICES']}"]
+
+        # Handle other acceleration types
+        for k, v in accel_env_vars.items():
+            if k in ["CUDA_VISIBLE_DEVICES", "JETSON_VISIBLE_DEVICES"]:
+                continue  # Already handled above
             elif k == "MUSA_VISIBLE_DEVICES":
                 self.exec_args += ["--env", "MTHREADS_VISIBLE_DEVICES=all"]
 
