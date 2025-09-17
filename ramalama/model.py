@@ -436,7 +436,10 @@ class Model(ModelBase):
 
         if not args.dryrun:
             try:
-                wait_for_healthy(args, is_healthy)
+                # Jetson boards need more time for model loading and GPU initialization
+                from ramalama.common import get_accel_env_vars
+                timeout = 60 if "JETSON_VISIBLE_DEVICES" in get_accel_env_vars() else 20
+                wait_for_healthy(args, is_healthy, timeout)
             except subprocess.TimeoutExpired as e:
                 logger.error(f"Failed to serve model {self.model_name}, for ramalama run command")
                 logger.error(f"{e}: logs: {e.output}")
