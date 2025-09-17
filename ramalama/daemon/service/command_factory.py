@@ -105,7 +105,7 @@ class CommandFactory:
             cmd.extend(["--no-webui"])
 
         if check_nvidia() or check_metal(SimpleNamespace({"container": False})):
-            cmd.extend(["--flash-attn", "on"])
+            cmd.extend(["--flash-attn"])
 
         # gpu arguments
         ngl = self.request_args.get("ngl")
