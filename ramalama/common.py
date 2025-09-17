@@ -649,6 +649,11 @@ def accel_image(config: Config) -> str:
     # Get image based on detected GPU type
     image = config.images.get(gpu_type or "", config.default_image)  # the or "" is just to keep mypy happy
 
+    # Special handling for Jetson images - always use :latest
+    jetson_image = config.images.get("JETSON_VISIBLE_DEVICES")
+    if image == jetson_image:
+        return f"{image}:latest"
+
     # Special handling for CUDA images based on version - only if the image is the default CUDA image
     cuda_image = config.images.get("CUDA_VISIBLE_DEVICES")
     if image == cuda_image:

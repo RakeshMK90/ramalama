@@ -65,7 +65,10 @@ class Engine:
         if getattr(self.args, "oci_runtime", None):
             self.exec_args += ["--runtime", self.args.oci_runtime]
             return
-        if check_nvidia() == "cuda":
+
+        # Check if CUDA runtime is needed (but not for Jetson which has its own handling)
+        accel_env_vars = get_accel_env_vars()
+        if "CUDA_VISIBLE_DEVICES" in accel_env_vars and "JETSON_VISIBLE_DEVICES" not in accel_env_vars:
             if self.use_docker:
                 self.exec_args += ["--runtime", "nvidia"]
             elif os.access("/usr/bin/nvidia-container-runtime", os.X_OK):
@@ -151,8 +154,7 @@ class Engine:
                     # newer Podman versions support --gpus=all, but < 5.0 do not
                     self.exec_args += ["--device", "nvidia.com/gpu=all"]
             elif k == "JETSON_VISIBLE_DEVICES":
-                # Jetson boards need both /dev/dri and nvidia.com/gpu=all
-                self.exec_args += ["--device", "/dev/dri"]
+                # Jetson boards need nvidia.com/gpu=all (dri devices are added by the general loop)
                 self.exec_args += ["--device", "nvidia.com/gpu=all"]
             elif k == "MUSA_VISIBLE_DEVICES":
                 self.exec_args += ["--env", "MTHREADS_VISIBLE_DEVICES=all"]
