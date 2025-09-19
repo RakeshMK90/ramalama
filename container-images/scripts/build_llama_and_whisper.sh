@@ -41,6 +41,7 @@ dnf_install_cuda() {
   . /opt/rh/gcc-toolset-12/enable
 }
 
+
 dnf_install_cann() {
   # just for openeuler build environment, does not need to push to ollama github
   dnf install -y git-core \
@@ -147,6 +148,7 @@ dnf_install() {
 
   dnf -y clean all
 }
+
 
 cmake_check_warnings() {
   # There has warning "CMake Warning:Manually-specified variables were not used by the project" during compile of custom ascend kernels of ggml cann backend.

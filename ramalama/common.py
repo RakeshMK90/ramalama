@@ -311,6 +311,31 @@ def check_asahi() -> Literal["asahi"] | None:
     return None
 
 
+def check_jetson() -> Literal["jetson"] | None:
+    if os.path.exists('/proc/device-tree/model'):
+        try:
+            with open('/proc/device-tree/model', 'rb') as f:
+                content = f.read().decode('utf-8', errors='ignore').lower()
+                if "jetson" in content:
+                    os.environ["JETSON_VISIBLE_DEVICES"] = "0"
+                    return "jetson"
+        except OSError:
+            pass
+    
+    # Fallback: check for tegra in nvidia device tree
+    if os.path.exists('/proc/device-tree/compatible'):
+        try:
+            with open('/proc/device-tree/compatible', 'rb') as f:
+                content = f.read().split(b"\0")
+                if any(b"nvidia,tegra" in item for item in content):
+                    os.environ["JETSON_VISIBLE_DEVICES"] = "0"
+                    return "jetson"
+        except OSError:
+            pass
+
+    return None
+
+
 def check_metal(args: ContainerArgType) -> bool:
     if args.container:
         return False
@@ -355,7 +380,9 @@ def check_nvidia() -> Literal["cuda"] | None:
             if not configured:
                 configured = indices
 
-        os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(configured)
+        # Don't set CUDA_VISIBLE_DEVICES if Jetson is already detected
+        if "JETSON_VISIBLE_DEVICES" not in os.environ:
+            os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(configured)
         return "cuda"
 
     return None
@@ -443,12 +470,13 @@ def check_mthreads() -> Literal["musa"] | None:
     return None
 
 
-AccelType: TypeAlias = Literal["asahi", "cuda", "cann", "hip", "intel", "musa"]
+AccelType: TypeAlias = Literal["asahi", "jetson", "cuda", "cann", "hip", "intel", "musa"]
 
 
 def get_accel() -> AccelType | Literal["none"]:
     checks: tuple[Callable[[], AccelType | None], ...] = (
         check_asahi,
+        check_jetson,
         cast(Callable[[], Literal['cuda'] | None], check_nvidia),
         check_ascend,
         check_rocm_amd,
@@ -482,6 +510,7 @@ GPUEnvVar: TypeAlias = Literal[
     "GGML_VK_VISIBLE_DEVICES",
     "HIP_VISIBLE_DEVICES",
     "INTEL_VISIBLE_DEVICES",
+    "JETSON_VISIBLE_DEVICES",
     "MUSA_VISIBLE_DEVICES",
 ]
 
@@ -621,6 +650,11 @@ def accel_image(config: Config) -> str:
 
     # Get image based on detected GPU type
     image = config.images.get(gpu_type or "", config.default_image)  # the or "" is just to keep mypy happy
+
+    # Special handling for Jetson images - always use :latest
+    jetson_image = config.images.get("JETSON_VISIBLE_DEVICES")
+    if image == jetson_image:
+        return f"{image}:latest"
 
     # Special handling for CUDA images based on version - only if the image is the default CUDA image
     cuda_image = config.images.get("CUDA_VISIBLE_DEVICES")

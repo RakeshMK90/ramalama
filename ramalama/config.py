@@ -85,6 +85,7 @@ class BaseConfig:
             "GGML_VK_VISIBLE_DEVICES": "quay.io/ramalama/ramalama",
             "HIP_VISIBLE_DEVICES": "quay.io/ramalama/rocm",
             "INTEL_VISIBLE_DEVICES": "quay.io/ramalama/intel-gpu",
+            "JETSON_VISIBLE_DEVICES": "ghcr.io/rakeshmk90/ramalama-jetson",
             "MUSA_VISIBLE_DEVICES": "quay.io/ramalama/musa",
             "VLLM": "registry.redhat.io/rhelai1/ramalama-vllm",
         }

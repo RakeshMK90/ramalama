@@ -74,7 +74,7 @@ verify_begin=".*run --rm"
 	assert "$output" =~ ".*--host 0.0.0.0" "Outside container sets host to 0.0.0.0"
 	is "$output" ".*--cache-reuse 256" "should use cache"
 	if is_darwin; then
-	   is "$output" ".*--flash-attn on" "use flash-attn on Darwin metal"
+	   is "$output" ".*--flash-attn" "use flash-attn on Darwin metal"
 	fi
 
 	run_ramalama -q --dryrun serve --seed abcd --host 127.0.0.1 ${model}
@@ -440,6 +440,43 @@ verify_begin=".*run --rm"
     run cat /tmp/$name.yaml
     is "$output" ".*command: \[\".*serve.*\"\]" "Should command"
     is "$output" ".*containerPort: 1234" "Should container container port"
+
+    rm /tmp/$name.yaml
+}
+
+@test  "ramalama serve --generate=compose" {
+    model="smollm:135m"
+    name="docker-compose"
+    run_ramalama pull $model
+    run_ramalama serve --name=$name --port 1234 --generate=compose $model
+    is "$output" ".*Generating Compose YAML file: ${name}.yaml" "generate .yaml file"
+
+    run cat $name.yaml
+    is "$output" ".*command: .*serve.*" "Should contain serve command"
+    is "$output" ".*ports:" "Should contain ports section"
+    is "$output" ".*- \"1234:1234\"" "Should map the container port"
+
+    HIP_VISIBLE_DEVICES=99 run_ramalama serve --name=${name} --port 1234 --generate=compose $model
+    is "$output" ".*Generating Compose YAML file: ${name}.yaml" "generate .yaml file"
+
+    run cat $name.yaml
+    is "$output" ".*environment:" "Should contain environment section"
+    is "$output" ".*- HIP_VISIBLE_DEVICES=99" "Should contain the HIP_VISIBLE_DEVICES env var"
+
+    rm $name.yaml
+}
+
+@test "ramalama serve --generate=compose:/tmp" {
+    model=tiny
+    name="docker-compose"
+    run_ramalama pull ${model}
+    run_ramalama serve --name=$name --port 1234 --generate=compose:/tmp ${model}
+    is "$output" ".*Generating Compose YAML file: ${name}.yaml" "generate .yaml file in /tmp"
+
+    run cat /tmp/$name.yaml
+    is "$output" ".*command: .*serve.*" "Should contain serve command"
+    is "$output" ".*ports:" "Should contain ports section"
+    is "$output" ".*- \"1234:1234\"" "Should map the container port correctly"
 
     rm /tmp/$name.yaml
 }

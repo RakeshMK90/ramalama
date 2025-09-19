@@ -1,0 +1,56 @@
+# ------------------------------------------------------------------------------
+# Stage 1: Build on a Jetson L4T "devel" image (Ubuntu aarch64 + CUDA + toolchains)
+# ------------------------------------------------------------------------------
+
+# IMPORTANT: this is ARM64 + Tegra userspace, not x86_64
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0 AS builder
+
+# System deps for building (adjust if your script needs extras)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential git cmake pkg-config \
+      python3 python3-pip python3-dev \
+      libssl-dev libcurl4-openssl-dev curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make sure CUDA toolchain is in PATH/LD paths inside the image
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CUDA_HOME}/compat:${LD_LIBRARY_PATH}
+
+# Copy your source and build as you do in the UBI9 flow
+WORKDIR /src/ramalama
+COPY . /src/ramalama
+
+# If your script detects CUDA from /usr/local/cuda this will "just work" on Jetson
+# (If it assumes RHEL/UBI paths, tweak it to respect CUDA_HOME)
+RUN container-images/scripts/build_llama_and_whisper.sh cuda
+
+# Your build script should drop artifacts into /tmp/install (same as your UBI9 flow)
+# If not, change the COPY line in the runtime stage accordingly.
+
+
+# ------------------------------------------------------------------------------
+# Stage 2: Runtime on a lean L4T base with CUDA runtime libs
+# ------------------------------------------------------------------------------
+
+FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0
+
+# Make CUDA's compat libs discoverable at runtime (mimics your ldconfig step)
+RUN echo "/usr/local/cuda/compat" > /etc/ld.so.conf.d/99_cuda_compat.conf && ldconfig
+
+# Python runtime (JetPack images are Ubuntu; Python 3.10 is default on 22.04)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 python3-pip libcurl4 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# Bring in built artifacts
+COPY --from=builder /tmp/install /usr
+
+# (Optional) Set CUDA envs; helpful for apps that probe these
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CUDA_HOME}/compat:${LD_LIBRARY_PATH}
+
+# No default ENTRYPOINT so you can run whatever you need
+ENTRYPOINT []

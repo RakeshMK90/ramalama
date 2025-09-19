@@ -65,7 +65,10 @@ class Engine:
         if getattr(self.args, "oci_runtime", None):
             self.exec_args += ["--runtime", self.args.oci_runtime]
             return
-        if check_nvidia() == "cuda":
+
+        # Check if CUDA runtime is needed (but not for Jetson which has its own handling)
+        accel_env_vars = get_accel_env_vars()
+        if "CUDA_VISIBLE_DEVICES" in accel_env_vars and "JETSON_VISIBLE_DEVICES" not in accel_env_vars:
             if self.use_docker:
                 self.exec_args += ["--runtime", "nvidia"]
             elif os.access("/usr/bin/nvidia-container-runtime", os.X_OK):
@@ -79,9 +82,17 @@ class Engine:
                 self.exec_args += [
                     "--security-opt=label=disable",
                 ]
-            if not getattr(self.args, "nocapdrop", False):
+
+            # Skip --cap-drop=all for Jetson boards as it interferes with GPU access
+            jetson_detected = "JETSON_VISIBLE_DEVICES" in get_accel_env_vars()
+            if not getattr(self.args, "nocapdrop", False) and not jetson_detected:
                 self.exec_args += [
                     "--cap-drop=all",
+                    "--security-opt=no-new-privileges",
+                ]
+            elif jetson_detected:
+                # Still add no-new-privileges for Jetson (but skip cap-drop=all)
+                self.exec_args += [
                     "--security-opt=no-new-privileges",
                 ]
 
@@ -134,14 +145,26 @@ class Engine:
             for dev in glob.glob(path):
                 self.exec_args += ["--device", dev]
 
-        for k, v in get_accel_env_vars().items():
-            # Special case for Cuda
-            if k == "CUDA_VISIBLE_DEVICES":
-                if self.use_docker:
-                    self.exec_args += ["--gpus", "all"]
-                else:
-                    # newer Podman versions support --gpus=all, but < 5.0 do not
-                    self.exec_args += ["--device", "nvidia.com/gpu=all"]
+        accel_env_vars = get_accel_env_vars()
+
+        # Jetson takes priority over CUDA since Jetson boards have NVIDIA hardware
+        if "JETSON_VISIBLE_DEVICES" in accel_env_vars:
+            # Jetson boards need nvidia.com/gpu=all (dri devices are added by the general loop)
+            self.exec_args += ["--device", "nvidia.com/gpu=all"]
+            self.exec_args += ["-e", f"JETSON_VISIBLE_DEVICES={accel_env_vars['JETSON_VISIBLE_DEVICES']}"]
+        elif "CUDA_VISIBLE_DEVICES" in accel_env_vars:
+            # Regular CUDA handling
+            if self.use_docker:
+                self.exec_args += ["--gpus", "all"]
+            else:
+                # newer Podman versions support --gpus=all, but < 5.0 do not
+                self.exec_args += ["--device", "nvidia.com/gpu=all"]
+            self.exec_args += ["-e", f"CUDA_VISIBLE_DEVICES={accel_env_vars['CUDA_VISIBLE_DEVICES']}"]
+
+        # Handle other acceleration types
+        for k, v in accel_env_vars.items():
+            if k in ["CUDA_VISIBLE_DEVICES", "JETSON_VISIBLE_DEVICES"]:
+                continue  # Already handled above
             elif k == "MUSA_VISIBLE_DEVICES":
                 self.exec_args += ["--env", "MTHREADS_VISIBLE_DEVICES=all"]
 
@@ -160,6 +183,10 @@ class Engine:
 
     def handle_podman_specifics(self):
         if getattr(self.args, "podman_keep_groups", None):
+            self.exec_args += ["--group-add", "keep-groups"]
+
+        # Jetson boards need --group-add keep-groups for proper GPU access
+        if "JETSON_VISIBLE_DEVICES" in get_accel_env_vars():
             self.exec_args += ["--group-add", "keep-groups"]
 
     def add(self, newargs):
